@@ -1,0 +1,17 @@
+{
+  "name": "service-b",
+  "version": "1.0.0",
+  "nx": {
+    "targets": {
+      "dev": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "../../wrapper.sh server.js",
+          "cwd": "{projectRoot}",
+          "continuous": true
+        }
+      }
+    }
+  }
+}
+

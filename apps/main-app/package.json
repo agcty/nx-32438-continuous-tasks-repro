@@ -1,0 +1,27 @@
+{
+  "name": "main-app",
+  "version": "1.0.0",
+  "nx": {
+    "targets": {
+      "dev": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "../../wrapper.sh server.js",
+          "cwd": "{projectRoot}",
+          "continuous": true
+        },
+        "dependsOn": [
+          {
+            "projects": ["service-a"],
+            "target": "dev"
+          },
+          {
+            "projects": ["service-b"],
+            "target": "dev"
+          }
+        ]
+      }
+    }
+  }
+}
+
