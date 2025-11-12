@@ -2,13 +2,14 @@
   "name": "nx-continuous-tasks-repro",
   "version": "1.0.0",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "nx dev main-app"
   },
   "devDependencies": {
-    "nx": "22.0.0-rc.0",
-    "@nx/js": "22.0.0-rc.0"
+    "nx": "22.0.3",
+    "@nx/js": "22.0.3"
   }
 }
-
