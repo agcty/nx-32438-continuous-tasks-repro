@@ -39,8 +39,8 @@
     "type": "service",
     "id": "website",
     "format": "esm",
-    "createdAt": 1764240478813,
-    "updatedAt": 1764241222675,
+    "createdAt": 1764241757506,
+    "updatedAt": 1764241776802,
     "url": "http://localhost:5173/",
     "routes": [],
     "domains": []

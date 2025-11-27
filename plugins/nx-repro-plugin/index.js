@@ -1,27 +1,22 @@
 /**
- * Nx plugin that mimics our production nx-alchemy-plugin
+ * Nx plugin that creates dev targets for alchemy.run.ts files
  *
- * Production setup:
- *   - Looks for alchemy.run.ts files
- *   - Wraps commands with doppler (secrets) and bunx
- *   - Command: doppler run -- bunx alchemy dev --app ${appName}
+ * This reproduces the production setup:
+ *   doppler run -- bunx alchemy dev --app ${appName}
  *
- * This repro provides multiple targets to test different scenarios:
- *   - dev: Simple wrapper.sh (baseline, may not trigger issue)
- *   - dev:real: Real alchemy command (bunx alchemy dev) - NO workaround
- *   - dev:safe: Real alchemy with wrapWithTrap workaround
+ * Which creates this process chain:
+ *   Nx → doppler → bunx → bun --watch → application
  */
 
-const { existsSync, readFileSync } = require("fs");
+const { readFileSync } = require("fs");
 const { dirname, join } = require("path");
 const { createNodesFromFiles } = require("@nx/devkit");
 
 /**
- * Production workaround: wrapWithTrap
+ * Workaround for Nx issue #32438
  *
- * We use this in production because Nx's tree-kill doesn't reliably
- * terminate all child processes. This wrapper forwards signals to
- * the process GROUP (note the minus sign in kill -TERM -$PID).
+ * Wraps command to forward signals to the process GROUP.
+ * Key: kill -TERM -$PID (negative) sends to entire process group.
  */
 function wrapWithTrap(command) {
   const escaped = command.replace(/'/g, "'\\''");
@@ -30,7 +25,6 @@ function wrapWithTrap(command) {
 
 /**
  * Extract app name from alchemy.run.ts
- * Matches: alchemy("app-name") or alchemy('app-name')
  */
 function extractAppName(filePath, fallback) {
   try {
@@ -47,66 +41,25 @@ async function createNodesInternal(configFilePath, _options, context) {
   const alchemyFile = join(context.workspaceRoot, configFilePath);
   const appName = extractAppName(alchemyFile, projectRoot.split("/").pop());
 
-  // Simple wrapper (baseline test)
-  const simpleCommand = "../../wrapper.sh server.js";
-
-  // Real alchemy command (like production)
-  // bunx alchemy dev --adopt --app ${appName}
-  const alchemyCommand = `bunx alchemy dev --adopt --app ${appName}`;
-
-  // With Doppler (full production chain)
-  // doppler run --project azav-cv --config dev -- bunx alchemy dev --adopt --app ${appName}
-  const dopplerAlchemyCommand = `doppler run --project azav-cv --config \${DOPPLER_CONFIG:-dev} -- bunx alchemy dev --adopt --app ${appName}`;
+  // Production command chain: doppler → bunx → bun --watch
+  const command = `doppler run --project azav-cv --config \${DOPPLER_CONFIG:-dev} -- bunx alchemy dev --adopt --app ${appName}`;
 
   const targets = {
-    // DEV: Simple wrapper - baseline test
+    // DEV: Triggers orphaned processes on Ctrl+C
     dev: {
       executor: "nx:run-commands",
       options: {
-        command: simpleCommand,
+        command: command,
         cwd: "{projectRoot}",
       },
       cache: false,
       continuous: true,
     },
-    // DEV:REAL: Real alchemy command WITHOUT workaround
-    // This should trigger orphaned processes on Ctrl+C
-    "dev:real": {
-      executor: "nx:run-commands",
-      options: {
-        command: alchemyCommand,
-        cwd: "{projectRoot}",
-      },
-      cache: false,
-      continuous: true,
-    },
-    // DEV:SAFE: Real alchemy WITH wrapWithTrap workaround
-    // This should clean up properly
+    // DEV:SAFE: With wrapWithTrap workaround - no orphans
     "dev:safe": {
       executor: "nx:run-commands",
       options: {
-        command: wrapWithTrap(alchemyCommand),
-        cwd: "{projectRoot}",
-      },
-      cache: false,
-      continuous: true,
-    },
-    // DEV:DOPPLER: Full production chain with Doppler
-    // doppler → bunx → bun --watch → application
-    "dev:doppler": {
-      executor: "nx:run-commands",
-      options: {
-        command: dopplerAlchemyCommand,
-        cwd: "{projectRoot}",
-      },
-      cache: false,
-      continuous: true,
-    },
-    // DEV:DOPPLER:SAFE: Doppler + wrapWithTrap workaround
-    "dev:doppler:safe": {
-      executor: "nx:run-commands",
-      options: {
-        command: wrapWithTrap(dopplerAlchemyCommand),
+        command: wrapWithTrap(command),
         cwd: "{projectRoot}",
       },
       cache: false,
@@ -114,22 +67,11 @@ async function createNodesInternal(configFilePath, _options, context) {
     },
   };
 
-  // main-app depends on services (simple wrapper test)
-  if (appName === "main-app") {
-    targets.dev.dependsOn = ["service-a:dev", "service-b:dev"];
-    targets["dev:real"].dependsOn = ["service-a:dev:real", "service-b:dev:real"];
-    targets["dev:safe"].dependsOn = ["service-a:dev:safe", "service-b:dev:safe"];
-    targets["dev:doppler"].dependsOn = ["service-a:dev:doppler", "service-b:dev:doppler"];
-    targets["dev:doppler:safe"].dependsOn = ["service-a:dev:doppler:safe", "service-b:dev:doppler:safe"];
-  }
-
-  // frontend depends on service-a and service-b (simulates frontend → database/infra)
-  // This is the most realistic test case - multiple continuous tasks with dependencies
+  // frontend depends on service-a and service-b
+  // This multi-task scenario is required to trigger the orphan issue
   if (appName === "frontend") {
-    targets["dev:real"].dependsOn = ["service-a:dev:real", "service-b:dev:real"];
+    targets.dev.dependsOn = ["service-a:dev", "service-b:dev"];
     targets["dev:safe"].dependsOn = ["service-a:dev:safe", "service-b:dev:safe"];
-    targets["dev:doppler"].dependsOn = ["service-a:dev:doppler", "service-b:dev:doppler"];
-    targets["dev:doppler:safe"].dependsOn = ["service-a:dev:doppler:safe", "service-b:dev:doppler:safe"];
   }
 
   return {

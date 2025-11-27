@@ -1,12 +1,8 @@
 {
-  "name": "nx-continuous-tasks-repro",
+  "name": "nx-orphan-processes-repro",
   "version": "1.0.0",
   "private": true,
   "workspaces": ["apps/*"],
-  "scripts": {
-    "dev": "nx dev main-app",
-    "dev:real": "nx dev:real main-app"
-  },
   "devDependencies": {
     "nx": "22.1.2",
     "@nx/js": "22.1.2",

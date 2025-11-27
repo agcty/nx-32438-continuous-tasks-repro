@@ -4,10 +4,6 @@
   "private": true,
   "scripts": {
     "build": "react-router build",
-    "deploy": "alchemy deploy",
-    "destroy": "alchemy destroy",
-    "dev": "alchemy dev",
-    "preview": "bun run build && vite preview",
     "typecheck": "react-router typegen && tsc -b"
   },
   "dependencies": {
