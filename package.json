@@ -4,11 +4,14 @@
   "private": true,
   "workspaces": ["apps/*"],
   "scripts": {
-    "dev": "nx dev main-app"
+    "dev": "nx dev main-app",
+    "dev:real": "nx dev:real main-app"
   },
   "devDependencies": {
-    "nx": "22.0.0-rc.0",
-    "@nx/js": "22.0.0-rc.0"
+    "nx": "22.1.2",
+    "@nx/js": "22.1.2",
+    "@nx/devkit": "22.1.2",
+    "alchemy": "0.78.0"
   }
 }
 

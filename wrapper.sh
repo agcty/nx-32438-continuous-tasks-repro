@@ -1,8 +1,12 @@
 #!/bin/bash
-# This wrapper script simulates the nested process spawning
-# that causes the bug (similar to doppler → bun → node chain)
+#
+# Simulates wrapper tools like doppler, bunx, or shell scripts.
+#
+# When this wrapper receives SIGTERM:
+# 1. Bash's default behavior is to exit immediately
+# 2. The child node process becomes orphaned (PPID → 1)
+# 3. tree-kill can't find orphaned processes
+#
 
-# Don't use exec - we want this wrapper to stay alive as a parent process
-# This creates the process chain: wrapper.sh → node server.js
-node "$@"
-
+node "$@" &
+wait $!
