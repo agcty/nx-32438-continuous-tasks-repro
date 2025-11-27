@@ -2,7 +2,7 @@ node_modules/
 .nx/
 dist/
 .env
-.alchemy
+.alchemy/
 .claude/
 .react-router/
 .wrangler/
