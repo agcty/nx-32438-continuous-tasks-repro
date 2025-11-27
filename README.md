@@ -1,166 +1,163 @@
-# Nx Continuous Tasks Bug Reproduction
+# Nx Issue #32438: Orphaned Processes Reproduction
 
-This is a minimal reproduction of [Nx issue #32438](https://github.com/nrwl/nx/issues/32438) where continuous tasks with dependencies don't stop when the parent task is terminated.
+Minimal reproduction for orphaned child processes when stopping continuous tasks with Ctrl+C.
 
-## Key Finding
+## Prerequisites
 
-**The bug occurs when commands use wrapper scripts that spawn child processes!**
+1. **Bun** - <https://bun.sh>
+2. **Doppler CLI** - <https://docs.doppler.com/docs/install-cli> (free account required)
 
-- ✅ Works: Direct commands like `node server.js`
-- ❌ Fails: Wrapped commands like `wrapper.sh server.js` which spawns `node server.js` as a child
+> **Note for maintainer:** Unfortunately, Doppler is required to reproduce this issue. The orphaned processes only occur with this specific process chain. Doppler has a free tier - you can create a project called `nx-repro` with a `dev` config (the config can be empty, we just need Doppler's process wrapping behavior).
 
-This explains why real-world setups using `doppler`, `bun`, or other wrappers experience this issue, while simple commands work fine.
-
-## Setup
+## Reproduction Steps
 
 ```bash
+# 1. Install dependencies
 bun install
+
+# 2. Run the frontend (which depends on service-a and service-b)
+bun nx dev frontend
+
+# 3. Wait for all 3 apps to start (you'll see "Server starting on port..." messages)
+
+# 4. Press Ctrl+C to stop
+
+# 5. Check for orphaned processes
+./test.sh check
 ```
 
-## Reproduce the Issue
+**Expected result:** 3 orphaned `bun --watch` processes still running (PPID=1, indicating they've been re-parented to init).
 
-1. Start the main app:
+## Verify the Workaround
 
-   ```bash
-   bun nx dev main-app
-   ```
+```bash
+# Clean up first
+./test.sh clean
 
-2. Verify all services started (check logs for all 3 servers):
+# Run with our workaround
+bun nx dev:safe frontend
 
-   - You should see `[service-a] Server starting on port 3001`
-   - You should see `[service-b] Server starting on port 3002`
-   - You should see `[main-app] Server starting on port 3000`
+# Press Ctrl+C
 
-3. Open another terminal and check processes:
+./test.sh check
+```
 
-   ```bash
-   ps aux | grep "node server.js"
-   ```
+**Expected result:** No orphaned processes.
 
-   You should see 3 node processes (one for each service).
+## What's Happening
 
-4. Stop Nx with Ctrl+C or press 'q' in the TUI
+### Process Chain
 
-5. Check processes again:
+```text
+Nx → doppler → bunx → bun --watch → application
+```
 
-   ```bash
-   ps aux | grep "node server.js"
-   ```
+### The Problem
 
-   **Expected:** No processes running  
-   **Actual:** All 3 node processes still running (orphaned)
+When Ctrl+C is pressed, each `bun --watch` process ends up in a **different process group**:
 
-6. Manually kill orphaned processes:
-   ```bash
-   pkill -f "node server.js"
-   ```
+```text
+PID    PPID   PGID   COMMAND
+87641  87483  87450  bun --watch service-b/alchemy.run.ts
+87617  87482  87452  bun --watch service-a/alchemy.run.ts
+87643  87484  87455  bun --watch frontend/alchemy.run.ts
+```
 
-## Expected Behavior
+Note the **different PGID values** (87450, 87452, 87455). Ctrl+C sends SIGINT to the **foreground process group only**. The child processes in separate groups never receive the signal and become orphaned.
 
-When stopping `nx dev main-app`, all dependent continuous tasks (service-a:dev and service-b:dev) should also terminate, and their graceful shutdown handlers should execute.
+### Analysis: Why Cleanup May Not Be Working
 
-## Actual Behavior
+We looked at Nx's source ([`packages/nx/src/executors/run-commands/running-tasks.ts`](https://github.com/nrwl/nx/blob/22.1.2/packages/nx/src/executors/run-commands/running-tasks.ts)) to understand what might be happening. We found two SIGINT handlers that could be relevant:
 
-- Only the Nx orchestration process stops
-- All 3 server processes remain running as orphaned processes
-- Graceful shutdown handlers never execute
-- Processes must be manually killed
+**Lines 520-523** (`RunningNodeProcess.addListeners`):
+
+```typescript
+process.on('SIGINT', () => {
+  this.childProcess.kill('SIGTERM');  // Node's built-in kill
+  process.exit(signalToCode('SIGINT'));
+});
+```
+
+**Lines 702-705** (`registerProcessListener`):
+
+```typescript
+process.on('SIGINT', () => {
+  runningTask.kill('SIGTERM');  // Calls tree-kill
+  process.exit(signalToCode('SIGINT'));  // Exits without awaiting
+});
+```
+
+We believe the issue might be that:
+
+1. The first handler uses Node's built-in `kill()` rather than tree-kill, OR
+2. The second handler calls tree-kill but doesn't await it before `process.exit()`
+
+Our hypothesis for what happens when Ctrl+C is pressed:
+
+1. SIGINT reaches Nx (it's in the foreground process group)
+2. Nx signals direct children but may not wait for tree-kill to complete
+3. Nx exits immediately with `process.exit()`
+4. Grandchildren in different process groups never get signaled
+5. Grandchildren become orphans (PPID=1)
+
+```text
+After Ctrl+C:
+PID    PPID   PGID   COMMAND
+87641  1      87450  bun --watch service-b/alchemy.run.ts  ← PPID=1 = orphaned
+87617  1      87452  bun --watch service-a/alchemy.run.ts  ← PPID=1 = orphaned
+87643  1      87455  bun --watch frontend/alchemy.run.ts   ← PPID=1 = orphaned
+```
+
+### Our Workaround
+
+We wrap commands with a trap that forwards signals to the **process group**:
+
+```javascript
+function wrapWithTrap(command) {
+  return `sh -c '${command} & PID=$!; trap "kill -TERM -$PID ..." EXIT TERM INT; wait $PID'`;
+}
+```
+
+Key: `kill -TERM -$PID` (negative PID) sends signal to the **entire process group**, not just one process.
+
+### Why This Is an Nx Issue
+
+While the different PGIDs are created by the process chain (doppler/bunx), Nx is responsible for:
+
+1. **Orchestrating continuous tasks** - Nx runs multiple dependent services
+2. **Ensuring clean shutdown** - Users expect Ctrl+C to stop everything
+3. **This is a common pattern** - Secret managers (Doppler, Vault, aws-vault) and runtime wrappers (bunx, npx) are standard in modern dev environments
+
+The workaround we use (trap + process group signaling) could be built into Nx's continuous task handling.
+
+## Diagnostic Commands
+
+```bash
+# Check for orphaned processes (shows PPID=1)
+./test.sh check
+
+# Show full process tree while running (run in another terminal)
+./test.sh tree
+
+# Clean up orphaned processes
+./test.sh clean
+```
+
+## Project Structure
+
+```text
+apps/
+├── frontend/        # React Router app (depends on service-a, service-b)
+├── service-a/       # Simple alchemy app
+└── service-b/       # Simple alchemy app
+
+plugins/
+└── nx-repro-plugin/ # Creates dev targets from alchemy.run.ts files
+```
 
 ## Environment
 
-- Nx: 22.0.0-rc.0
-- Node.js: Required (v18+)
-- OS: Any Unix-like system (Linux, macOS)
-- Package Manager: Bun 1.3.0
-
-## How It Works
-
-- `main-app` depends on both `service-a` and `service-b`
-- All three use `wrapper.sh` which spawns `node server.js` as a child process
-- This creates a process chain: `Nx → wrapper.sh → node server.js`
-- Each server has graceful shutdown handlers for SIGINT/SIGTERM
-- When you stop Nx, the termination signal reaches `wrapper.sh` but **not** the `node` child
-- The `node` processes become orphaned and continue running
-
-### Why It Happens
-
-When Nx sends SIGTERM/SIGINT to stop tasks:
-```
-Nx → wrapper.sh (receives signal, exits)
-      └─ node server.js (orphaned, keeps running!)
-```
-
-The wrapper process exits, but it doesn't propagate the signal to its children. This is the root cause of the bug.
-
-## Workaround
-
-The `trap` technique propagates signals to all child processes:
-
-```bash
-sh -c 'trap "kill 0" EXIT; node server.js'
-```
-
-This creates a process group and ensures all children receive the termination signal when the parent exits.
-
-## Automated Test
-
-Run the automated test script to verify the bug:
-
-```bash
-./test-bug.sh
-```
-
-This script will:
-
-1. Clean up any existing processes
-2. Start Nx with main-app
-3. Verify all 3 services started
-4. Stop Nx
-5. Check if processes remain running
-6. Report the results
-
-Expected output if bug exists:
-
-```
-=========================================
-❌ BUG REPRODUCED
-   3 orphaned processes still running
-=========================================
-```
-
-## Manual Verification
-
-You can also verify manually:
-
-```bash
-# Start the services
-bun nx dev main-app &
-NX_PID=$!
-
-# Wait for them to start
-sleep 2
-
-# Check initial state
-echo "=== Processes before stopping ==="
-ps aux | grep "node server.js" | grep -v grep | wc -l
-
-# Stop Nx
-kill $NX_PID
-sleep 1
-
-# Check final state
-echo "=== Processes after stopping ==="
-ps aux | grep "node server.js" | grep -v grep | wc -l
-
-# Cleanup
-pkill -f "node server.js"
-```
-
-Expected output if bug exists:
-
-```
-=== Processes before stopping ===
-3
-=== Processes after stopping ===
-3  # <-- Should be 0 but is 3
-```
+- Nx: 22.1.2
+- Bun: 1.3.2
+- Alchemy: 0.78.0
+- macOS
