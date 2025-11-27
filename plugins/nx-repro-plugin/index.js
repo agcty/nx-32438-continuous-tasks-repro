@@ -42,7 +42,7 @@ async function createNodesInternal(configFilePath, _options, context) {
   const appName = extractAppName(alchemyFile, projectRoot.split("/").pop());
 
   // Production command chain: doppler → bunx → bun --watch
-  const command = `doppler run --project azav-cv --config \${DOPPLER_CONFIG:-dev} -- bunx alchemy dev --adopt --app ${appName}`;
+  const command = `doppler run --project nx-repro --config \${DOPPLER_CONFIG:-dev} -- bunx alchemy dev --adopt --app ${appName}`;
 
   const targets = {
     // DEV: Triggers orphaned processes on Ctrl+C

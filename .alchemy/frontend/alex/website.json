@@ -4,7 +4,7 @@
   "fqn": "frontend/alex/website",
   "seq": 0,
   "data": {},
-  "status": "updated",
+  "status": "created",
   "output": {
     "Symbol(alchemy::ResourceKind)": "cloudflare::Worker",
     "Symbol(alchemy::ResourceID)": "website",
@@ -39,8 +39,8 @@
     "type": "service",
     "id": "website",
     "format": "esm",
-    "createdAt": 1764241757506,
-    "updatedAt": 1764241776802,
+    "createdAt": 1764243241308,
+    "updatedAt": 1764243241308,
     "url": "http://localhost:5173/",
     "routes": [],
     "domains": []

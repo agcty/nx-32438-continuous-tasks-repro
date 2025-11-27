@@ -7,7 +7,7 @@ Minimal reproduction for orphaned child processes when stopping continuous tasks
 1. **Bun** - <https://bun.sh>
 2. **Doppler CLI** - <https://docs.doppler.com/docs/install-cli> (free account required)
 
-> **Note for maintainer:** Unfortunately, Doppler is required to reproduce this issue. The orphaned processes only occur with this specific process chain. Doppler has a free tier - you can create a project called `azav-cv` with a `dev` config (the config can be empty, we just need Doppler's process wrapping behavior).
+> **Note for maintainer:** Unfortunately, Doppler is required to reproduce this issue. The orphaned processes only occur with this specific process chain. Doppler has a free tier - you can create a project called `nx-repro` with a `dev` config (the config can be empty, we just need Doppler's process wrapping behavior).
 
 ## Reproduction Steps
 
