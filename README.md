@@ -1,15 +1,57 @@
-# Nx Issue #32438: Orphaned Processes Reproduction
+# Nx Issue #32438: Orphaned Processes & Cleanup Handler Issue
 
-Minimal reproduction for orphaned child processes when stopping continuous tasks with Ctrl+C.
+Minimal reproduction for two related issues:
 
-## Prerequisites
+1. **Original issue:** Orphaned child processes when stopping continuous tasks
+2. **New issue (PR #33655):** Cleanup handlers never run because processes are killed too aggressively
+
+## Quick Test: Cleanup Handler Issue (No Doppler Required)
+
+This demonstrates that `onCleanup()` handlers never run with the new `killProcessTree`:
+
+```bash
+# 1. Install dependencies
+bun install
+
+# 2. Make sure no containers are running
+./test.sh clean
+
+# 3. Run nx dev (like in production)
+bunx nx dev:simple frontend
+
+# 4. Wait for all services to start (database, services, frontend)
+
+# 5. Press Ctrl+C to stop
+
+# 6. Check if cleanup ran
+./test.sh check
+```
+
+**Expected:** Docker container stops (cleanup handler ran)
+**Actual:** Docker container still running (cleanup handler never called)
+
+This mirrors production where `nx dev frontend` starts all dependencies including the database.
+
+The `apps/database/alchemy.run.ts` registers a cleanup handler:
+
+```typescript
+app.onCleanup(async () => {
+  console.log("Cleanup handler called, stopping Docker...");
+  execSync("docker compose down");  // <-- This never runs!
+});
+```
+
+With the new `killProcessTree` in PR #33655, processes are terminated immediately without receiving SIGTERM, so cleanup handlers never execute.
+
+---
+
+## Prerequisites (for full orphan repro)
 
 1. **Bun** - <https://bun.sh>
-2. **Doppler CLI** - <https://docs.doppler.com/docs/install-cli> (free account required)
+2. **Docker** - for the cleanup handler test
+3. **Doppler CLI** - <https://docs.doppler.com/docs/install-cli> (only for orphan process test)
 
-> **Note for maintainer:** Unfortunately, Doppler is required to reproduce this issue. The orphaned processes only occur with this specific process chain. Doppler has a free tier - you can create a project called `nx-repro` with a `dev` config (the config can be empty, we just need Doppler's process wrapping behavior).
-
-## Reproduction Steps
+## Orphan Process Reproduction Steps
 
 ```bash
 # 1. Install dependencies
@@ -147,6 +189,7 @@ The workaround we use (trap + process group signaling) could be built into Nx's 
 
 ```text
 apps/
+├── database/        # Docker postgres with cleanup handler (demonstrates cleanup issue)
 ├── frontend/        # React Router app (depends on service-a, service-b)
 ├── service-a/       # Simple alchemy app
 └── service-b/       # Simple alchemy app
@@ -155,9 +198,25 @@ plugins/
 └── nx-repro-plugin/ # Creates dev targets from alchemy.run.ts files
 ```
 
+## Targets
+
+- `dev` - Full production setup with doppler
+- `dev:simple` - Without doppler (easier to test cleanup issue)
+- `dev:safe` - With trap workaround (processes clean up properly)
+
 ## Environment
 
-- Nx: 22.1.2
+- Nx: 0.0.0-pr-33655-040845c (PR version with killProcessTree fix)
 - Bun: 1.3.2
 - Alchemy: 0.78.0
 - macOS
+
+## The Issue
+
+PR #33655 introduces `killProcessTree` which:
+
+1. Fixes orphaned processes by killing the entire process tree
+2. But kills too aggressively - doesn't send SIGTERM first
+3. Cleanup handlers (via `signal-exit`) never run
+
+**Suggested fix:** Implement SIGTERM → wait(timeout) → SIGKILL pattern like systemd/Docker/Kubernetes.

@@ -44,12 +44,25 @@ async function createNodesInternal(configFilePath, _options, context) {
   // Production command chain: doppler → bunx → bun --watch
   const command = `doppler run --project nx-repro --config \${DOPPLER_CONFIG:-dev} -- bunx alchemy dev --adopt --app ${appName}`;
 
+  // Simple command without doppler - for testing cleanup issue
+  const simpleCommand = `bunx alchemy dev --adopt --app ${appName}`;
+
   const targets = {
-    // DEV: Triggers orphaned processes on Ctrl+C
+    // DEV: Full production setup with doppler
     dev: {
       executor: "nx:run-commands",
       options: {
         command: command,
+        cwd: "{projectRoot}",
+      },
+      cache: false,
+      continuous: true,
+    },
+    // DEV:SIMPLE: Without doppler - easier to test cleanup issue
+    "dev:simple": {
+      executor: "nx:run-commands",
+      options: {
+        command: simpleCommand,
         cwd: "{projectRoot}",
       },
       cache: false,
@@ -67,11 +80,12 @@ async function createNodesInternal(configFilePath, _options, context) {
     },
   };
 
-  // frontend depends on service-a and service-b
-  // This multi-task scenario is required to trigger the orphan issue
+  // frontend depends on database, service-a, and service-b
+  // This mirrors production: nx dev frontend → starts all dependencies
   if (appName === "frontend") {
-    targets.dev.dependsOn = ["service-a:dev", "service-b:dev"];
-    targets["dev:safe"].dependsOn = ["service-a:dev:safe", "service-b:dev:safe"];
+    targets.dev.dependsOn = ["database:dev", "service-a:dev", "service-b:dev"];
+    targets["dev:simple"].dependsOn = ["database:dev:simple", "service-a:dev:simple", "service-b:dev:simple"];
+    targets["dev:safe"].dependsOn = ["database:dev:safe", "service-a:dev:safe", "service-b:dev:safe"];
   }
 
   return {

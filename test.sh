@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Helper script to check for and clean up orphaned processes
+# Helper script to test the cleanup handler issue
 #
 
 cd "$(dirname "$0")"
@@ -13,58 +13,49 @@ NC='\033[0m'
 
 case "$1" in
     check)
+        echo -e "${BOLD}Checking for orphaned processes...${NC}"
         COUNT=$(ps aux | grep -E "bun.*--watch.*alchemy" | grep -v grep | wc -l | tr -d ' ')
         if [ "$COUNT" -gt 0 ]; then
-            echo -e "${RED}${BOLD}Found $COUNT orphaned processes:${NC}"
-            echo ""
-            echo -e "  ${BOLD}PID    PPID   PGID   COMMAND${NC}"
-            ps -eo pid,ppid,pgid,command | grep -E "bun.*--watch.*alchemy" | grep -v grep | head -10 | while read pid ppid pgid cmd; do
-                if [ "$ppid" = "1" ]; then
-                    echo -e "  ${RED}$pid  $ppid     $pgid   $(echo "$cmd" | cut -c1-60)${NC}  ${YELLOW}← PPID=1 (orphaned!)${NC}"
-                else
-                    echo "  $pid  $ppid   $pgid   $(echo "$cmd" | cut -c1-60)"
-                fi
-            done
-            echo ""
-
-            # Check if PGIDs are different (the key indicator)
-            PGIDS=$(ps -eo pgid,command | grep -E "bun.*--watch.*alchemy" | grep -v grep | awk '{print $1}' | sort -u | wc -l | tr -d ' ')
-            if [ "$PGIDS" -gt 1 ]; then
-                echo -e "${YELLOW}Note: Processes are in $PGIDS different process groups (PGIDs).${NC}"
-                echo -e "${YELLOW}This is why Ctrl+C didn't reach them - it only signals the foreground group.${NC}"
-                echo ""
-            fi
-
-            echo "Run './test.sh clean' to kill them."
+            echo -e "${RED}Found $COUNT orphaned bun processes${NC}"
+            ps aux | grep -E "bun.*--watch.*alchemy" | grep -v grep
         else
-            echo -e "${GREEN}No orphaned processes${NC}"
+            echo -e "${GREEN}No orphaned bun processes${NC}"
+        fi
+
+        echo ""
+        echo -e "${BOLD}Checking for orphaned Docker containers...${NC}"
+        if docker ps --format '{{.Names}}' | grep -q "nx-repro-postgres"; then
+            echo -e "${RED}Docker container 'nx-repro-postgres' is still running!${NC}"
+            echo -e "${YELLOW}This means onCleanup() was never called.${NC}"
+            docker ps --filter "name=nx-repro-postgres"
+        else
+            echo -e "${GREEN}No orphaned Docker containers${NC}"
         fi
         ;;
 
-    tree)
-        echo -e "${BOLD}Process tree for alchemy/bun processes:${NC}"
-        echo ""
-        # Show the full process tree including nx, doppler, bunx, bun
-        echo -e "  ${BOLD}PID    PPID   PGID   COMMAND${NC}"
-        ps -eo pid,ppid,pgid,command | grep -E "(nx|doppler|bunx|bun.*alchemy)" | grep -v grep | while read pid ppid pgid cmd; do
-            echo "  $pid  $ppid   $pgid   $(echo "$cmd" | cut -c1-70)"
-        done
-        echo ""
-        echo -e "${YELLOW}Look for different PGID values - these processes won't receive Ctrl+C${NC}"
-        ;;
-
     clean)
+        echo "Cleaning up..."
         pkill -9 -f "bun.*--watch.*alchemy" 2>/dev/null || true
         pkill -9 -f "bunx alchemy" 2>/dev/null || true
-        echo "Cleaned up."
+        docker compose -f apps/database/docker-compose.yml down 2>/dev/null || true
+        echo -e "${GREEN}Cleaned up${NC}"
         ;;
 
     *)
         echo "Usage: ./test.sh <command>"
         echo ""
         echo "Commands:"
-        echo "  check  - Check for orphaned 'bun --watch' processes (run after Ctrl+C)"
-        echo "  tree   - Show process tree while running (run in another terminal)"
-        echo "  clean  - Kill all orphaned processes"
+        echo "  check  - Check for orphaned processes and Docker containers"
+        echo "  clean  - Kill orphaned processes and stop Docker containers"
+        echo ""
+        echo "Test the cleanup handler issue:"
+        echo "  1. ./test.sh clean"
+        echo "  2. bunx nx dev:simple frontend"
+        echo "  3. Wait for all services to start"
+        echo "  4. Press Ctrl+C"
+        echo "  5. ./test.sh check"
+        echo ""
+        echo "Expected: Docker container stops (cleanup ran)"
+        echo "Actual:   Docker container still running (cleanup never called)"
         ;;
 esac
