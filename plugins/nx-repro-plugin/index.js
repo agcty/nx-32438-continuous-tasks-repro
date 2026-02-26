@@ -44,12 +44,25 @@ async function createNodesInternal(configFilePath, _options, context) {
   // Production command chain: doppler → bunx → bun --watch
   const command = `doppler run --project nx-repro --config \${DOPPLER_CONFIG:-dev} -- bunx alchemy dev --adopt --app ${appName}`;
 
+  // Simple command without doppler for local testing
+  const simpleCommand = `bunx alchemy dev --adopt --app ${appName}`;
+
   const targets = {
     // DEV: Triggers orphaned processes on Ctrl+C
     dev: {
       executor: "nx:run-commands",
       options: {
         command: command,
+        cwd: "{projectRoot}",
+      },
+      cache: false,
+      continuous: true,
+    },
+    // DEV:SIMPLE: Without doppler - easier to test locally
+    "dev:simple": {
+      executor: "nx:run-commands",
+      options: {
+        command: simpleCommand,
         cwd: "{projectRoot}",
       },
       cache: false,
@@ -71,6 +84,7 @@ async function createNodesInternal(configFilePath, _options, context) {
   // This multi-task scenario is required to trigger the orphan issue
   if (appName === "frontend") {
     targets.dev.dependsOn = ["service-a:dev", "service-b:dev"];
+    targets["dev:simple"].dependsOn = ["service-a:dev:simple", "service-b:dev:simple"];
     targets["dev:safe"].dependsOn = ["service-a:dev:safe", "service-b:dev:safe"];
   }
 

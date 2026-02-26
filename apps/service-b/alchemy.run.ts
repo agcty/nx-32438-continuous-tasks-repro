@@ -23,6 +23,9 @@ server.listen(PORT, () => {
 });
 
 app.onCleanup(async () => {
+  const fs = await import("node:fs");
+  const timestamp = new Date().toISOString();
+  fs.writeFileSync(`/tmp/nx-investigation/repro/cleanup-${NAME}.log`, `${timestamp} - ${NAME} cleanup handler ran\n`, { flag: "a" });
   console.log(`[${NAME}] Cleanup handler called, closing server...`);
   await new Promise<void>((resolve, reject) => {
     server.close((err) => {
@@ -30,6 +33,7 @@ app.onCleanup(async () => {
       else resolve();
     });
   });
+  fs.writeFileSync(`/tmp/nx-investigation/repro/cleanup-${NAME}.log`, `${timestamp} - ${NAME} server closed\n`, { flag: "a" });
   console.log(`[${NAME}] Server closed`);
 });
 

@@ -8,3 +8,4 @@ dist/
 .wrangler/
 .tsbuild/
 nx-source/
+cleanup-*.log
