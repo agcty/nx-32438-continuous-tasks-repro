@@ -23,6 +23,15 @@ case "$1" in
         fi
 
         echo ""
+        echo -e "${BOLD}Checking for cleanup marker file...${NC}"
+        if [ -f "apps/database/.cleanup-ran" ]; then
+            echo -e "${GREEN}Cleanup marker file exists! Contents:${NC}"
+            cat apps/database/.cleanup-ran
+        else
+            echo -e "${RED}Cleanup marker file NOT found — onCleanup() never ran${NC}"
+        fi
+
+        echo ""
         echo -e "${BOLD}Checking for orphaned Docker containers...${NC}"
         if docker ps --format '{{.Names}}' | grep -q "nx-repro-postgres"; then
             echo -e "${RED}Docker container 'nx-repro-postgres' is still running!${NC}"
@@ -38,6 +47,7 @@ case "$1" in
         pkill -9 -f "bun.*--watch.*alchemy" 2>/dev/null || true
         pkill -9 -f "bunx alchemy" 2>/dev/null || true
         docker compose -f apps/database/docker-compose.yml down 2>/dev/null || true
+        rm -f apps/database/.cleanup-ran
         echo -e "${GREEN}Cleaned up${NC}"
         ;;
 

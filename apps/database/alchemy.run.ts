@@ -5,7 +5,8 @@
  * ACTUAL (PR #33655): Process killed immediately → onCleanup never runs → container keeps running
  */
 import { execSync } from "node:child_process";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import alchemy from "alchemy";
 import { FileSystemStateStore } from "alchemy/state";
@@ -38,7 +39,10 @@ for (let i = 0; i < 30; i++) {
 }
 
 // Register cleanup - THIS SHOULD RUN BUT DOESN'T WITH PR #33655
+const cleanupMarker = join(__dirname, ".cleanup-ran");
 app.onCleanup(async () => {
+  console.log(`[${NAME}] Cleanup handler called, writing marker file...`);
+  writeFileSync(cleanupMarker, `Cleanup ran at ${new Date().toISOString()}\n`);
   console.log(`[${NAME}] Cleanup handler called, stopping Docker...`);
   try {
     execSync("docker compose down", { cwd: __dirname, stdio: "inherit" });
