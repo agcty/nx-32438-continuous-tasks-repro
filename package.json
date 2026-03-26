@@ -4,9 +4,9 @@
   "private": true,
   "workspaces": ["apps/*"],
   "devDependencies": {
-    "nx": "22.6.0-pr.33655.b3efa09",
-    "@nx/js": "22.6.0-pr.33655.b3efa09",
-    "@nx/devkit": "22.6.0-pr.33655.b3efa09",
+    "nx": "22.7.0-pr.33655.527519b",
+    "@nx/js": "22.7.0-pr.33655.527519b",
+    "@nx/devkit": "22.7.0-pr.33655.527519b",
     "alchemy": "0.78.0"
   }
 }

@@ -1,6 +1,8 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "plugins": ["./plugins/nx-repro-plugin"],
+  "plugins": [
+    "./plugins/nx-repro-plugin"
+  ],
   "targetDefaults": {
     "dev": {
       "continuous": true
@@ -18,6 +20,6 @@
         "cacheableOperations": []
       }
     }
-  }
+  },
+  "analytics": false
 }
-
